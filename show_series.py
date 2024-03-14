@@ -6,13 +6,14 @@ import os
 import numpy as np
 import json
 import argparse
+import time
 
 from head_motion_tools import transformation_tools, postprocessing, metadata_io, point_cloud_io, file_helpers
 from head_motion_tools.visualization import VtkVisualizer, VtkTools
 
 
 
-def main(input_folder, output_folder, crop=None, mapping='Depth', save_3d=False, save_mp4=False, timestep=24.995*4):
+def main(input_folder, output_folder, crop=None, mapping='Gray', save_3d=False, save_mp4=False, timestep=24.995*4):
     """
     Main function to process and visualize point cloud sequences.
 
@@ -29,12 +30,16 @@ def main(input_folder, output_folder, crop=None, mapping='Depth', save_3d=False,
     """
 
     # if SHOW_REGISTRATION:
-    if os.path.isfile(os.path.join(output_folder, 'pointcloud_paths.json')):
+    if os.path.isfile(os.path.join(output_folder, 'pointcloud_paths.json')) and os.path.isfile(os.path.join(output_folder, 'raw_timestamps.json')):
         with open(os.path.join(output_folder, 'pointcloud_paths.json'), 'r') as f:
             pc_filenames = json.load(f)
+        with open(os.path.join(output_folder, 'raw_timestamps.json'), 'r') as f:
+            timestamps = json.load(f)
     else:
-        pc_filenames = metadata_io.get_point_cloud_paths(input_folder)
+        pc_filenames, timestamps = metadata_io.get_point_cloud_paths(input_folder)
 
+    # format timestamps
+    timestamps = [time.strftime('%H:%M:%S.{}'.format(int(np.round((t - timestamps[0])*1000%1000))), time.gmtime(t - timestamps[0])) for t in timestamps]
     
 
     with open(os.path.join(output_folder, 'matrices', 'registration_matrices.npy'), 'rb') as f:
@@ -70,7 +75,7 @@ def main(input_folder, output_folder, crop=None, mapping='Depth', save_3d=False,
         orig_pc, colors = point_cloud_io.to2dArray(orig_pc, getColors=True)
 
         if mapping == 'Gray':
-            pc_seq.addPointCloud(orig_pc, colors, 'red')
+            pc_seq.addPointCloud(orig_pc, colors=colors, cmap='gray')
         elif mapping == 'Weights':
             pc_seq.addOverlaidPointClouds([ref_pc, gen_pcs[i]], [weights[i], colors], ['weights','gray'])
         elif mapping == 'Depth':
@@ -91,7 +96,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--input_folder', type=str, help='Path to the input folder.', required=True)
     parser.add_argument('-o', '--output_folder', type=str, help='Path to write intermediate outputs folder. Also used to read registrations', required=True)
     parser.add_argument('--crop', type=int, nargs=2, help='Crop the point cloud sequence to the specified range (start, end).', default=None)
-    parser.add_argument('--mapping', type=str, help='Color mapping to use for the 3d visualization (default: Depth). Options: Depth, Gray, Weights', default='Depth')
+    parser.add_argument('--mapping', type=str, help='Color mapping to use for the 3d visualization (default: Depth). Options: Depth, Gray, Weights', default='Gray')
     parser.add_argument('--save_3d', help='Save the 3d visualization as a movie.', action='store_true', default=False)
     parser.add_argument('--save_mp4', help='Save the matplotlib output as an mp4.', action='store_true', default=False)
     parser.add_argument('--timestep', type=float, help='Time between frames in movie (default: 24.995*4).', default=24.995*4)
@@ -100,5 +105,5 @@ if __name__ == '__main__':
     
 
 
-    main(args.input_folder, args.output_folder, crop=args.crop, mapping='Depth', save_3d=False, save_mp4=False, timestep=24.995*4)
+    main(args.input_folder, args.output_folder, crop=args.crop, mapping=args.mapping, save_3d=False, save_mp4=False, timestep=24.995*4)
 

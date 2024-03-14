@@ -67,7 +67,7 @@ class PointCloudSequence:
     def addPointCloud(self, pc, colors=None, cmap='gray'):
         if self.no_pcs != 1:
             raise ValueError('no_pointclouds set to >1, this disables addPointCloud')
-        self.sequenceList.append(VtkTools.VtkPointCloud(pc, colors=colors, colors_min=self.colors_min, colors_max=self.colors_max))
+        self.sequenceList.append(VtkTools.VtkPointCloud(pc, colors=colors, colors_min=self.colors_min, colors_max=self.colors_max, color_map=cmap))
         
     def addOverlaidPointClouds(self, pc_list, color_list, cmap=None):
         if cmap == None:
@@ -111,6 +111,15 @@ class AddPointCloudTimerCallbackViewport():
         for pcs_in_viewport in pcs:
             self.pcs.append(np.array(pcs_in_viewport))
 
+    
+    def hide_actors(self):
+        for i,r in enumerate(self.renderers):
+            if self.pcs[i].ndim == 2:
+                for j in range(len(self.pcs[i][self.prev])):
+                    r.RemoveActor(self.pcs[i][self.prev,j].vtkActor)
+            else:
+                r.RemoveActor(self.pcs[i][self.prev].vtkActor)
+
 
     def next(self, iren, event):
         # ----- used to set initial camera position -----
@@ -123,12 +132,8 @@ class AddPointCloudTimerCallbackViewport():
 
         # singal that the loop restarts
         if selected_pc == -1:
-            for i,r in enumerate(self.renderers):
-                if self.pcs[i].ndim == 2:
-                    for j in range(len(self.pcs[i][self.prev])):
-                        r.RemoveActor(self.pcs[i][self.prev,j].vtkActor)
-                else:
-                    r.RemoveActor(self.pcs[i][self.prev].vtkActor)
+            self.hide_actors()
+                
 
             if self.record and not self.movie_finished and self.loop_number == self.RECORDING_ITERATION:
                 print('finishing')
@@ -150,6 +155,7 @@ class AddPointCloudTimerCallbackViewport():
                     r.AddActor(self.pcs[i][selected_pc].vtkActor)
 
             self.prev = selected_pc
+            
 
         iren.GetRenderWindow().Render()
 
@@ -162,9 +168,36 @@ class AddPointCloudTimerCallbackViewport():
 
         self.iterations += 1
 
-    def previous(self):
+    def previous(self, iren: vtk.vtkRenderWindowInteractor, event):
+        if self.iterations <= 0:
+            return
 
-        print('not implemented')
+        selected_pc = (self.iterations % len(self.pcs[0])) -1
+
+        if selected_pc == -1:
+            self.hide_actors()
+        else:
+            for i,r in enumerate(self.renderers):
+                if self.pcs[i].ndim == 2:
+                    for j in range(len(self.pcs[i][self.prev])):
+                        r.RemoveActor(self.pcs[i][self.prev,j].vtkActor)
+                        r.AddActor(self.pcs[i][selected_pc,j].vtkActor)
+                else:
+                    r.RemoveActor(self.pcs[i][self.prev].vtkActor)
+                    r.AddActor(self.pcs[i][selected_pc].vtkActor)
+
+            self.prev = selected_pc
+
+        #self.update_frame_displays(selected_pc)
+        iren.GetRenderWindow().Render()
+
+        self.iterations -= 1
+
+            
+
+            
+
+        
 
 
 class AddMeshCallbackViewport():
@@ -650,18 +683,13 @@ def displayPointCloudSequence(pcs, title='Test', ms=100, window_size=(1000,1000)
     renderer.ResetCamera()
     camera =vtk.vtkCamera()
     
-    #position:     (121.99721781493807, 202.9587832863862, -16.28330235941489)
-    #focal Point:  (13.175933337768422, -4.249359238596592, 197.04781429796938)
-    #roll:         170.1225630033345
-    camera.SetPosition(195.27342323718858, 189.34504995328476, -146.12475972226036)
-    camera.SetFocalPoint(9.68813680451325, -0.440555007385222, 201.8577793162133)
-    camera.SetRoll(170.1225630033345)
+    setCameraPosition(camera)
     renderer.SetActiveCamera(camera)
 
     # Render Window
     renderWindow = vtk.vtkRenderWindow()
     renderWindow.SetSize(*window_size)
-    renderWindow.SetWindowName(title);
+    renderWindow.SetWindowName(title)
     renderWindow.AddRenderer(renderer)
 
     # Interactor
@@ -679,24 +707,10 @@ def displayPointCloudSequence(pcs, title='Test', ms=100, window_size=(1000,1000)
 
     # Initialize a timer for the animation
     addPointCloudTimerCallback = AddPointCloudTimerCallbackViewport([renderer], [pcs], record, moviewriter, imageFilter)
-    renderWindowInteractor.AddObserver('TimerEvent', addPointCloudTimerCallback.next)
-    timerId = renderWindowInteractor.CreateRepeatingTimer(ms)
-    addPointCloudTimerCallback.timerId = timerId
-
     renderWindow.Render()
-    style = RecordingClickInteractorStyle(renderWindowInteractor, renderWindow)
+    style = RecordingClickInteractorStyle(renderWindowInteractor, renderWindow, addPointCloudTimerCallback, fps=8)
     renderWindowInteractor.SetInteractorStyle(style)
     renderWindowInteractor.Start()
-
-    # # Initialize a timer for the animation
-    # addPointCloudTimerCallback = AddPointCloudTimerCallback(renderer, pcs)
-    # renderWindowInteractor.AddObserver('TimerEvent', addPointCloudTimerCallback.next)
-    # timerId = renderWindowInteractor.CreateRepeatingTimer(ms)
-    # addPointCloudTimerCallback.timerId = timerId
-
-    # # Begin Interaction
-    # renderWindow.Render()
-    # renderWindowInteractor.Start()
 
     if record:
         moviewriter.End()
@@ -722,12 +736,7 @@ def displayOverlaidPointCloudSequence(pcs, title='Test', ms=100, window_size=(10
     renderer.ResetCamera()
     camera =vtk.vtkCamera()
     
-    #position:     (121.99721781493807, 202.9587832863862, -16.28330235941489)
-    #focal Point:  (13.175933337768422, -4.249359238596592, 197.04781429796938)
-    #roll:         170.1225630033345
-    camera.SetPosition(195.27342323718858, 189.34504995328476, -146.12475972226036)
-    camera.SetFocalPoint(9.68813680451325, -0.440555007385222, 201.8577793162133)
-    camera.SetRoll(170.1225630033345)
+    setCameraPosition(camera)
     renderer.SetActiveCamera(camera)
 
     # Render Window
@@ -809,7 +818,9 @@ class RecordingClickInteractorStyle(vtk.vtkInteractorStyleTrackballCamera): # vt
         self.recording = False
         self.fps = fps
         self.image_filename = 'screenshot.png'
-        self.playing_video = False
+        timerId = self.interactor.CreateRepeatingTimer(int(round(1000/self.fps)))
+        self.window_manager.timerId = timerId
+        self.playing_video = True
 
         # set up image filter to pipe into movie writer
         self.imageFilter = vtk.vtkWindowToImageFilter()

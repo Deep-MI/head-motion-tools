@@ -29,37 +29,6 @@ def get_reference_path(pointcloud_dir: str, ref_type: str):
 
         files = file_helpers.find_files_by_wildcard(pointcloud_dir, '*.pcd')
 
-        # multiple references found -> determine appropriate reference, by matching MOT.tsm file
-        if len(files) > 2:
-            MOTION_FILES = file_helpers.find_files_by_wildcard(pointcloud_dir, '*_MOT.tsm')
-            assert(len(MOTION_FILES) > 1), 'many pointclouds found, but one or less MOT.tsm files found -- directory might be corrupted'
-            time_dict = get_timestamps_for_sequence(cut=0,seq='FULL',zeroIn=False)
-            seq_start = time_dict[subject_id][0]
-            RUN_ID = None
-
-            seconds_in_subsession = []
-            # check if a MOT.tsm file describes all known pointclouds
-            for motion_file in MOTION_FILES:
-                acq_times_raw, _ = read_opt_time(motion_file)
-                acq_times = convert_acquisition_time_to_seconds(acq_times_raw)
-                if seq_start <= acq_times[-1] and seq_start >= acq_times[0]:
-                    RUN_ID = re.match(r'.+_(\d+)_MOT.tsm',motion_file).group(1) # detmine ID of subsession from MOT.tsm file
-                    break
-                seconds_in_subsession.append(acq_times[-1] - acq_times[0])
-            # if no MOT.tsm file describes all known pointclouds, use the MOT.tsm file that covers the most time
-            if RUN_ID is None:
-                motion_file = MOTION_FILES[np.argmax(seconds_in_subsession)]
-                RUN_ID = re.match(r'.+_(\d+)_MOT.tsm',motion_file).group(1) # detmine ID of subsession from MOT.tsm file
-                print('Couldnt find any motiontracker run that contains the full sequence, using the longest one instead')
-
-            new_files = []
-            for pcd_file in files:
-                if RUN_ID in pcd_file:
-                    new_files.append(pcd_file)
-            
-            files = new_files
-            assert(len(files) == 2)
-
         # select either raw or 
         for filepath in files:
             if ('PCL' if ref_type == 'PCL' else 'REF') in filepath:
@@ -75,7 +44,7 @@ def get_reference_path(pointcloud_dir: str, ref_type: str):
     return ref_pc_path
 
 
-def get_timestamps_for_sequence(output_dir, zeroIn=True, cut=None, only_corrected=False):
+def get_timestamps_for_sequence(input_dir, output_dir, zeroIn=True, cut=None, only_corrected=False):
     """
     returns the timestamps for each registration/pointcloud in a dict of subjects, as list
     seq     sequence of interest
@@ -88,9 +57,12 @@ def get_timestamps_for_sequence(output_dir, zeroIn=True, cut=None, only_correcte
     return  dictionary with subject IDs as keys, containing lists of timestamps
     """
 
-    
-    with open(os.path.join(output_dir, 'timestamps.json'), 'rb') as f:
-        timestamps = json.load(f)
+    try:
+        with open(os.path.join(output_dir, 'raw_timestamps.json'), 'rb') as f:
+            timestamps = json.load(f)
+    except:
+        print('couldnt find timestamp json')
+        _, timestamps = metadata_io.get_point_cloud_paths(input_dir)
 
     time_dict = {}
         
@@ -180,21 +152,7 @@ def get_point_cloud_paths(pointcoud_data_dir):
     elif len(MOTION_FILE) == 1:
         MOTION_FILE = MOTION_FILE[0]
     else:
-        try:
-            csv_data = get_mri_start_times()
-        except:
-            raise FileNotFoundError(f'couldnt load csv with sequence info to choose between {MOTION_FILE}')
-
-        if subject in csv_data.keys():
-            find_motionfile_output = find_sequence_in_motion_files(MOTION_FILE, csv_data[subject])
-
-            if find_motionfile_output is None:
-                raise FileNotFoundError('couldnt identify correct logfile')
-                # TODO: we could have another fallback here
-            else:
-                MOTION_FILE = find_motionfile_output
-        else:
-            raise FileNotFoundError('couldnt resolve motion file - no sequence data found')
+        MOTION_FILE = MOTION_FILE[-1]
 
 
     FILE_PREFIX = MOTION_FILE[:-len('MOT.tsm')].split('/')[-1]
@@ -531,21 +489,21 @@ def getTimestampsForSequence(input_directory, output_directory, zeroIn=True, cut
             raise IOError('failed to read or generate', json_file, e)
 
         
-        if zeroIn:
-            timestamps = (np.array(timestamps) - timestamps[0]).tolist()
-        
-        if cut:
-            if isinstance(cut, tuple):
-                if cut[0] == 0 and cut[1] == 0:
-                    pass
-                elif cut[0] == 0:
-                    timestamps = timestamps[:-cut[1]]
-                elif cut[1] == 0:
-                    timestamps = timestamps[cut[0]:]
-                else:
-                    timestamps = timestamps[cut[0]:-cut[1]]
+    if zeroIn:
+        timestamps = (np.array(timestamps) - timestamps[0]).tolist()
+    
+    if cut:
+        if isinstance(cut, tuple):
+            if cut[0] == 0 and cut[1] == 0:
+                pass
+            elif cut[0] == 0:
+                timestamps = timestamps[:-cut[1]]
+            elif cut[1] == 0:
+                timestamps = timestamps[cut[0]:]
             else:
-                timestamps = timestamps[cut:-cut]
+                timestamps = timestamps[cut[0]:-cut[1]]
+        else:
+            timestamps = timestamps[cut:-cut]
 
 
     return timestamps

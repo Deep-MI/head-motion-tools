@@ -122,7 +122,6 @@ def fast_ircp(reference, data, fix_point=None, fix_point_data=None, fp_weight=0.
     T_rot = np.eye(int(reference.shape[0]), dtype=np.float64)
     T_trans = np.zeros((int(reference.shape[0]),1), dtype=np.float64)
 
-    res = np.inf
     for iter in range(maxIter):
         if fixed_correspondence:
             distances = np.sqrt(np.sum((reference-data)**2, axis=0))
@@ -141,11 +140,11 @@ def fast_ircp(reference, data, fix_point=None, fix_point_data=None, fp_weight=0.
     ret[:reference.shape[0], reference.shape[0]] = T_trans.squeeze()
 
     if getWeights and getError:
-        return ret, data, weights, ret
+        return ret, data, weights, np.mean(distances)
     elif getWeights:
         return ret, data, weights
     elif getError:
-        return ret, data, res
+        return ret, data, np.mean(distances)
     else:
         return ret, data
 

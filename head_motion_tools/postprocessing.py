@@ -1,21 +1,24 @@
 from argparse import Namespace
 import os
 from glob import glob
-import json
 
 import numpy as np
 import pandas as pd
+import nibabel as nib
 
-from head_motion_tools import metadata_io, transformation_tools, transformation_smoothing, motion_magnitude
+from head_motion_tools import metadata_io, transformation_tools, transformation_smoothing, motion_magnitude, mri_tools, sequential_registration
 
-def load_transformation_series(input_dir, output_dir, get_euler_form=True, load_tracsuite_registration=False):
+def load_transformation_series(input_dir, output_dir, get_euler_form=True, load_tracsuite_registration=False, mapping=None):
     """
     Loads a series of transformations and writes it to the output directory
 
-
+    Args:
+        input_dir (str): The input directory path.
+        output_dir (str): The output directory path.
+        get_euler_form (bool, optional): Whether to get the Euler form. Defaults to True.
+        load_tracsuite_registration (bool, optional): Whether to load Trac Suite registration. Defaults to False.
+        mapping (np.ndarray, optional): A mapping matrix to convert the transformation series into another space. Preferably this space has the head center at the origin. Defaults to None.
     """
-    subject_id = os.path.basename(input_dir)
-    
     if not load_tracsuite_registration:
         transformations = np.load(os.path.join(output_dir, 'matrices', 'registration_matrices.npy'))
     else:
@@ -24,6 +27,9 @@ def load_transformation_series(input_dir, output_dir, get_euler_form=True, load_
         except:
             pc_filenames, _ = metadata_io.get_point_cloud_paths(input_dir)
         transformations = metadata_io.load_tracsuite_transformation_series(input_dir, pc_filenames)
+
+    if mapping is not None:
+        transformations = mapping @ transformations @ np.linalg.inv(mapping)
 
 
     if get_euler_form:
@@ -42,7 +48,7 @@ def load_transformation_series(input_dir, output_dir, get_euler_form=True, load_
 
 
 
-def prepare_motion_data(input_folder, output_folder, parameter_dict, get_euler_form=True, load_tracsuite_transformations=False):
+def prepare_motion_data(input_folder, output_folder, parameter_dict, get_euler_form=True, load_tracsuite_transformations=False, t1w_image=None):
     """
     Reads motion data for analysis or display.
 
@@ -74,14 +80,34 @@ def prepare_motion_data(input_folder, output_folder, parameter_dict, get_euler_f
 
     if p.INTERPOLATION_MODE != 'Transformation' and not p.INTERPOLATION_MODE is None:
         raise ValueError('wrong INTERPOLATION_MODE identifier')
+    
+    if p.MAP_TO_RAS:
+
+        mt_ras_savepath = os.path.join(output_folder, 'matrices','mt_to_ras.npy')
+        if os.path.isfile(mt_ras_savepath):
+            pc_to_ras_mri_mapping = np.load(mt_ras_savepath)
+        else:
+            nibabel_image = nib.load(t1w_image)
+            reference_pointcloud, _ = sequential_registration.load_reference(input_folder, ref_type='EYE', output_space='MT')
+            # robust scaling and converts to LIA
+            nibabel_image_conformed = mri_tools.conform(nibabel_image)
+            # get transformation from point cloud to MRI RAS space
+            pc_to_ras_mri_mapping = mri_tools.register_pc_to_mri(nibabel_image_conformed, reference_pointcloud, debug=False)
+            np.save(mt_ras_savepath, pc_to_ras_mri_mapping)
+    else:
+        pc_to_ras_mri_mapping = None
+
 
     
-    transformation_series, date, euler_form, euler_form_df = load_transformation_series(input_folder, output_folder, get_euler_form, load_tracsuite_transformations)
+    transformation_series, date, euler_form, euler_form_df = load_transformation_series(input_folder, output_folder, get_euler_form, load_tracsuite_transformations, mapping=pc_to_ras_mri_mapping)
 
 
     if p.INTERPOLATION_MODE == 'Transformation': # smoothing + interpolation
         print('doing transformation interpolation', 'with smooth parameters' if p.SMOOTH else 'with hard parameters (no smoothing)')
-        timestamps = metadata_io.getTimestampsForSequence(input_folder, output_folder, cut=0, zeroIn=False)
+        timestamps = metadata_io.getTimestampsForSequence(input_folder, output_folder, cut=0, zeroIn=True)
+
+        if p.CROP is not None:
+            timestamps = timestamps[p.CROP[0]:p.CROP[1]]
 
         interpolation_timestamps = np.arange(0, timestamps[-1], 0.125)
 
@@ -166,7 +192,6 @@ def split_sequences(motion_data, acq_times, sequence_lengths, start_zero=True, c
                                                 names=['sequence', 'subjectid', 'data']),
                                         columns=np.arange(stop=int(max(sequence_lengths.values())/0.1)),
                                         data=None)
-
 
     if not pilot_mode:
         # setup output dataframe

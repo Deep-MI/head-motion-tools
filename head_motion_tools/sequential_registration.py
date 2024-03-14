@@ -6,10 +6,8 @@ VERSION = '2.0.3'
 VISUALIZE = False # debugging mode determines imports (this is useful e.g. in docker, where we dont debug and therefore dont need vtk)
 
 import os
-import json
 
 # python native imports
-import pickle
 import pickle
 import time
 from types import SimpleNamespace
@@ -20,7 +18,7 @@ from tqdm import tqdm
 from scipy.spatial import KDTree
 
 # custom library imports
-from head_motion_tools import ircp, transformation_tools, metadata_io, preprocessing
+from head_motion_tools import ircp, transformation_tools, metadata_io, preprocessing, mri_tools
 from head_motion_tools import point_cloud_io as pc_io
 
 
@@ -29,11 +27,11 @@ if VISUALIZE:
 
 
 
-def load_reference(subject, ref_type, output_space='RAS', structured_pc_coordinates=False):
+def load_reference(input_dir, ref_type, output_space, structured_pc_coordinates=False):
     """
     Loads a reference 
 
-    subject         image ID
+    input_dir       path to the directory containing the reference
     type            PCL, REF, EYE or T1 for different types of references that can be loaded
     process         whether references should be postprocessed
     output_space    space to output reference in   RAS | MT | None/native
@@ -49,7 +47,7 @@ def load_reference(subject, ref_type, output_space='RAS', structured_pc_coordina
     if ref_type == 'T1' and structured_pc_coordinates:
         raise NotImplementedError('cant provide structure for T1 image yet')
 
-    ref_pc_path = metadata_io.get_reference_path(subject, ref_type)
+    ref_pc_path = metadata_io.get_reference_path(input_dir, ref_type)
 
 
     if ref_type == 'EYE' or ref_type == 'PCL' or ref_type == 'REF':
@@ -107,13 +105,15 @@ def load_reference(subject, ref_type, output_space='RAS', structured_pc_coordina
         raise NotImplementedError('wrong reference file')
 
 
-def register_series(input_directory, pc_list, param_dict,debug=False):
+def register_series(input_directory, pc_list, param_dict, t1_path=None, debug=False):
     """
     This function registers the pointcloud sequence corresponding to the subject_name
     The output is saved as a pickle file in the specified folder (param_dict).
 
     input_directory  path to the directory containing the pointclouds
+    pc_list          list of pointclouds
     param_dict      dictionary with registration parameters
+    t1_path          path to the T1 image (optional, can improve registration)
     debug           whether to display debug information
 
     return          'done' if successful
@@ -125,7 +125,6 @@ def register_series(input_directory, pc_list, param_dict,debug=False):
     'CROP' : None  # cropping of the sequence
     'OUTPUT_FOLDER' : 'motiontracker_support'  # output folder
     'OUTDIR': os.path.join(output_folder, 'matrices')  # output directory
-    'HEAD_PINPOINT': False  # whether to use the back of the head as a fixpoint
     'SAVE_WEIGHTS' : True  # whether to save the weights of the registration
     'CARRY_MASK': False  # whether to carry the mask from the previous registration
     'PRE_ALIGN' : True  # whether to pre-align the pointclouds with the previous transformation
@@ -172,10 +171,21 @@ def register_series(input_directory, pc_list, param_dict,debug=False):
     else:
         prev_trans = np.eye(4)
 
-    if p.HEAD_PINPOINT:
-        head_pinpoi = preprocessing.get_back_of_head_point(input_directory)
-        fix_point_data = head_pinpoi.copy()
+    if p.FP_WEIGHT > 0 and t1_path is not None:
+        USING_FIXPOINT = True
+
+        fixpoint_savepath = os.path.join(p.OUTDIR, 'matrices', 'fixpoint_reference.txt')
+        mt_ras_savepath = os.path.join(p.OUTDIR, 'matrices', 'mt_to_ras.npy')
+        if os.path.isfile(fixpoint_savepath) and os.path.isfile(mt_ras_savepath):
+            fixpoint_reference = np.loadtxt(fixpoint_savepath)
+        else:
+            fixpoint_reference, pc_to_ras_mri_mapping = mri_tools.get_stabilizing_point(t1_path, load_reference(input_directory, ref_type='EYE', output_space='MT')[0], debug=debug)
+            np.savetxt(fixpoint_savepath, fixpoint_reference)
+            np.save(mt_ras_savepath, pc_to_ras_mri_mapping)
+        fix_point_data = fixpoint_reference.copy()
     else:
+        USING_FIXPOINT = False
+        fixpoint_reference = None
         fix_point_data = None
 
 
@@ -184,7 +194,6 @@ def register_series(input_directory, pc_list, param_dict,debug=False):
         weight_list = []
         output_data_list = []
 
-    #ref_pc = ref_pc.T
     print('generating', p.OUTFILE, 'from', len(pc_list), 'pointclouds')
 
     if debug: 
@@ -266,7 +275,7 @@ def register_series(input_directory, pc_list, param_dict,debug=False):
             registration_data = pc.T
             registration_reference = crop_ref.T
         transform, out_pc, weights = ircp.fast_ircp(reference=registration_reference, data=registration_data, critFun=p.CRITERION, maxIter=p.MAX_ITER, getWeights=True,
-                                                est_b=p.EST_B, n_threads=p.N_THREADS, fix_point=head_pinpoi if p.HEAD_PINPOINT else None, fix_point_data=fix_point_data, fp_weight=p.FP_WEIGHT)
+                                                est_b=p.EST_B, n_threads=p.N_THREADS, fix_point=fixpoint_reference, fix_point_data=fix_point_data, fp_weight=p.FP_WEIGHT)
         out_pc = out_pc.T
 
         if p.REF_TO_PC:
@@ -296,10 +305,10 @@ def register_series(input_directory, pc_list, param_dict,debug=False):
             print('displaying: registration reference and registered pc with weights')
             VtkVisualizer.displayOverlaidPointCloud(
                 VtkTools.VtkPointCloud(registration_reference.T),#, colors=mri_colors),
-                VtkTools.VtkPointCloud(out_pc, colors=weights / np.max(weights) if not p.HEAD_PINPOINT else weights[:-1] / np.max(weights[:-1]), colors_min=0, colors_max=1, color_map='default'),
+                VtkTools.VtkPointCloud(out_pc, colors=weights / np.max(weights) if not USING_FIXPOINT else weights[:-1] / np.max(weights[:-1]), colors_min=0, colors_max=1, color_map='default'),
                 title='registration reference and registered pc with weights')
 
-        if p.HEAD_PINPOINT:
+        if USING_FIXPOINT:
             fix_point_data = out_pc[:,-1]
 
         

@@ -40,6 +40,42 @@ def get_eye_point_cloud(subject_name):
     return eye_cloud
 
 
+def getEyeMask(pc_ref, getIdx=False):
+    """
+    Extracts the eye mask from the reference pointcloud
+    pc_ref          (N,6) array (pointcloud)
+    getIdx          if True, returns the indices of the mask
+    return          (N,6) boolean array (mask), (optional) (N,6) array (indices)
+    """
+
+    mask = np.zeros((pc_ref.shape[0],pc_ref.shape[1]), dtype=bool)
+    mask[np.logical_and(np.logical_and(pc_ref[:,:,3] > 100, pc_ref[:,:,4] == 0), pc_ref[:,:,5] == 0)] = True
+    if getIdx:
+        return mask, np.nonzero(mask)
+    else:
+        return mask
+
+
+def copyEye(pc_ref,pc_pcl, inplace=False):
+    """
+    copy eye from pcl to ref file, if the eye is cut out as a closed off hole
+    pc_ref  segmented pointcloud with cut out eye
+    pc_pcl  complete pointcloud (artifacts + eye)
+
+    return  segmented pointcloud with eye
+    """
+
+    eye_mask = getEyeMask(pc_ref)
+
+    if inplace:
+        pc_ref[eye_mask] = pc_pcl[eye_mask]
+        return pc_ref
+    else:
+        new_ref = pc_ref.copy()
+        new_ref[eye_mask] = pc_pcl[eye_mask]
+        return new_ref
+
+
 def get_boundaries(pc,rounding=True):
     """
     determines the minimum and maximum coordinates of points in a pointcloud with fixed rounding
@@ -66,38 +102,3 @@ def get_boundaries(pc,rounding=True):
 
     center = ((pt_min[0] + pt_max[0]) /2,(pt_min[1] + pt_max[1]) /2,(pt_min[2] + pt_max[2]) /2)
     return pt_min,pt_max,center
-
-
-# def get_back_of_head_point(subject, output_space='MT'):
-#     """
-#     Robust method to get a point on the skull furthest to the posterior direction
-#     subject         subject ID
-#     return          np array with 3 values (x,y,z)
-#     """
-#     ref_pc_path = metadata_io.get_reference_path(subject, 'T1')
-#     nifti_data = nib.load(ref_pc_path)
-#     nifti_data = mri_tools.conform(nifti_data)
-#     nifti_data_raw = nifti_data.get_fdata()
-#     #nifti_data = DataTools.loadReference(subject, ref_type='T1', output_space='RAS') # cant use this because we doesnt yield point-cloud
-
-#     # careful, this says ras, but is operating in LIA !!!!!!!!!
-#     t1_ref_pc_back, _ = mri_tools.mri_to_pc(nifti_data_raw, skin_threshold=25, reverse_direction=True)
-
-#     sorting_index = np.argsort(t1_ref_pc_back[:,2])
-#     back_of_head_slice = t1_ref_pc_back[sorting_index][10,2]  # select the depth that is tenth largest (for robustness, can be the same as the largest depth)
-#     back_of_head_indices = np.where(t1_ref_pc_back[:,2] == back_of_head_slice)[0]
-#     back_of_head_indices = np.append(back_of_head_indices, np.where(t1_ref_pc_back[:,2] == back_of_head_slice+1)[0])
-#     back_of_head_indices = np.append(back_of_head_indices, np.where(t1_ref_pc_back[:,2] == back_of_head_slice+2)[0])
-
-#     back_of_head = t1_ref_pc_back[back_of_head_indices]
-
-#     back_of_head_center = np.median(back_of_head,axis=0)
-
-#     back_of_head_center_ras = transformation_tools.applyTransformation(back_of_head_center[None], nifti_data.affine).squeeze()
-
-#     if output_space == 'RAS':
-#         return back_of_head_center_ras
-#     elif output_space == 'MT':
-#         raise NotImplementedError('Handling of MT space not implemented')
-#         t1ar_to_mt_transform = np.load(os.path.join(T1_TO_MT_DIR, 'mat' ,subject + '.npy'))
-#         return transformation_tools.applyTransformation(back_of_head_center_ras[None], t1ar_to_mt_transform).squeeze()
