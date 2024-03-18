@@ -819,7 +819,8 @@ class RecordingClickInteractorStyle(vtk.vtkInteractorStyleTrackballCamera): # vt
         self.fps = fps
         self.image_filename = 'screenshot.png'
         timerId = self.interactor.CreateRepeatingTimer(int(round(1000/self.fps)))
-        self.window_manager.timerId = timerId
+        if self.window_manager is not None:
+            self.window_manager.timerId = timerId
         self.playing_video = True
 
         # set up image filter to pipe into movie writer

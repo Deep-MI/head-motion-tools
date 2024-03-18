@@ -140,11 +140,11 @@ def fast_ircp(reference, data, fix_point=None, fix_point_data=None, fp_weight=0.
     ret[:reference.shape[0], reference.shape[0]] = T_trans.squeeze()
 
     if getWeights and getError:
-        return ret, data, weights, np.mean(distances)
+        return ret, data, weights, np.sum(distances)
     elif getWeights:
         return ret, data, weights
     elif getError:
-        return ret, data, np.mean(distances)
+        return ret, data, np.sum(distances)
     else:
         return ret, data
 

@@ -28,8 +28,7 @@ def get_reference_path(pointcloud_dir: str, ref_type: str):
         #LOG_DIR = getLogDir(subject)
 
         files = file_helpers.find_files_by_wildcard(pointcloud_dir, '*.pcd')
-
-        # select either raw or 
+        # select either raw or cropped pointcloud
         for filepath in files:
             if ('PCL' if ref_type == 'PCL' else 'REF') in filepath:
                 ref_pc_path = filepath

@@ -126,9 +126,9 @@ def register_pc_to_mri(nifti_data_raw, reference_pc, debug=True):
     # convert to RAS
     mri_front = transformation_tools.applyTransformation(mri_front, nifti_data_raw.affine)
 
-    center_area_idx = np.where((mri_front[:,2] < 50) & (mri_front[:,2] > -60) & (mri_front[:,1] > 20))
-    
+
     # crop top and bottom of the mri point cloud
+    center_area_idx = np.where((mri_front[:,2] < 50) & (mri_front[:,2] > -100) & (mri_front[:,1] > 20))
     mri_front = mri_front[center_area_idx]
     mri_colors = mri_colors[center_area_idx]
 
@@ -140,21 +140,14 @@ def register_pc_to_mri(nifti_data_raw, reference_pc, debug=True):
     pre_registration_transformation = np.array([[ 1, 0, 0, 40], [0, 1, 0, 300], [0, 0, 1, 0], [0, 0, 0, 1]]) @ pre_registration_transformation  # 40 mm to the right and 300 mm to the front
     #pre_registration_transformation = np.array([[ 1, 0, 0, 100], [0, 1, 0, 100], [0, 0, 1, 90], [0, 0, 0, 1]]) @ pre_registration_transformation  # 40 mm to the right and 300 mm to the front
     pre_registration_transformation = np.array([[0.9990482,  0.0436194, 0, 0], [-0.0435928,  0.9984396, -0.0348995, 0],[-0.0015223, 0.0348663, 0.9993908,0], [0, 0, 0, 1]]) @ pre_registration_transformation # empericially determined rotation
-    0.9990482,  0.0436194, -0.0000000
 
     # pre_registration_transformation = np.array([[ -0.5456259,  0.7728130, -0.3241180, 0],
     #                                             [0.7728130,  0.6135935,  0.1620590, 0],
     #                                         [0.3241180, -0.1620590, -0.9320324, 0],
     #                                         [0, 0, 0, 1]])
 
-    reference_pc = transformation_tools.applyTransformation(reference_pc, pre_registration_transformation)
+    #reference_pc = transformation_tools.applyTransformation(reference_pc, pre_registration_transformation)
 
-    if debug:
-        VtkVisualizer.displayOverlaidPointCloud(
-            VtkTools.VtkPointCloud(mri_front, colors=mri_colors, color_map='gray'),
-            VtkTools.VtkPointCloud(reference_pc, colors='green')
-    )
-    
 
     # subsample the point cloud
     reference_pc_subsampled = reference_pc[::8]
@@ -163,31 +156,64 @@ def register_pc_to_mri(nifti_data_raw, reference_pc, debug=True):
     print('starting registration to structural image')
     # apply registration in a grid search
 
+    transformations = []
+    errors = []
+
     if debug:
-        pre_reg_to_mri, registered_pc, weights, error = ircp.fast_ircp(
-            mri_front_subsampled.astype(np.float64).T,
-            reference_pc_subsampled.astype(np.float64).T, 
-            maxIter=30, critFun=2, est_b=0.7, 
-            getError=True, getWeights=True
-        )
-    else:
-        pre_reg_to_mri, registered_pc, error = ircp.fast_ircp(
-            mri_front_subsampled.astype(np.float64).T,
-            reference_pc_subsampled.astype(np.float64).T, 
-            maxIter=200, critFun=2, est_b=0.7, 
-            getError=True, getWeights=False
-        )
+        registered_pc_list = []
+        weights_list = []
+        pre_transformations = []
+
+    for i in range(-100, 100, 10):
+        added_transformation = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, i], [0, 0, 0, 1]])
+
+        current_pre_registration_transformation = added_transformation @ pre_registration_transformation
+
+        reference_pc_pre_aligned = transformation_tools.applyTransformation(reference_pc_subsampled, current_pre_registration_transformation)
+
+        if debug:
+            pre_reg_to_mri, registered_pc, weights, error = ircp.fast_ircp(
+                mri_front_subsampled.astype(np.float64).T,
+                reference_pc_pre_aligned.astype(np.float64).T, 
+                maxIter=30, critFun=2, est_b=0.7, 
+                getError=True, getWeights=True
+            )
+            registered_pc_list.append(registered_pc)
+            weights_list.append(weights)
+            pre_transformations.append(current_pre_registration_transformation)
+        else:
+            pre_reg_to_mri, registered_pc, error = ircp.fast_ircp(
+                mri_front_subsampled.astype(np.float64).T,
+                reference_pc_pre_aligned.astype(np.float64).T, 
+                maxIter=200, critFun=2, est_b=0.7, 
+                getError=True, getWeights=False
+            )
+        transformations.append(pre_reg_to_mri @ current_pre_registration_transformation)
+        errors.append(error)
+
     print('finished registration to structural image')
+
+    #print('errors:', errors)
+    chosen = np.argmin(errors)
+    #print(errors[chosen])
+
     
     if debug:
+        reference_pc_pre_aligned = transformation_tools.applyTransformation(reference_pc, pre_transformations[chosen])
+
         VtkVisualizer.displayOverlaidPointCloud(
             VtkTools.VtkPointCloud(mri_front, colors=mri_colors, color_map='gray'),
-            VtkTools.VtkPointCloud(registered_pc.T, colors=weights, color_map='color')
+            VtkTools.VtkPointCloud(reference_pc_pre_aligned, colors='green')
         )
 
-    mt_to_ras = pre_reg_to_mri @ pre_registration_transformation
+        VtkVisualizer.displayOverlaidPointCloud(
+            VtkTools.VtkPointCloud(mri_front, colors=mri_colors, color_map='gray'),
+            VtkTools.VtkPointCloud(registered_pc_list[chosen].T, colors=weights_list[chosen], color_map='color')
+        )
 
-    return mt_to_ras # 4.917564324032976 error false, 7.404973456414794 error true
+    #mt_to_ras = pre_reg_to_mri @ pre_registration_transformation
+
+    return transformations[chosen]
 
 def map_image(img, out_affine, out_shape, ras2ras=np.array([[1.0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]),
               order=1):

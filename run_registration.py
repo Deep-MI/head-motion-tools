@@ -80,11 +80,10 @@ def main(input_folder, output_folder, deviation=False, t1w_image=None, acquisiti
             param_dict_registration = {
                 'REGISTRATION_METHOD' : 'IRCP',
                 'REFERENCE': 'REF',
-                'MAX_ITER': 30,
+                'MAX_ITER': 15,
                 'CROP' : None,
                 'OUTPUT_FOLDER' : output_folder,
                 'OUTDIR': os.path.join(output_folder, 'matrices'),
-                'HEAD_PINPOINT': False,
                 'SAVE_WEIGHTS' : False,
                 'CARRY_MASK': False,
                 'PRE_ALIGN' : True,
@@ -120,7 +119,7 @@ def main(input_folder, output_folder, deviation=False, t1w_image=None, acquisiti
 
         # main registration loop
         if not os.path.isfile(registration_output_file):
-            sequential_registration.register_series(input_folder, pc_list, t1_path=t1w_image, param_dict=param_dict_registration, debug=False)
+            sequential_registration.register_series(input_folder, pc_list, t1_path=t1w_image, param_dict=param_dict_registration, debug=True)
         else:
             print('registration matrices already exist, skipping registration')
 

@@ -204,10 +204,7 @@ def register_series(input_directory, pc_list, param_dict, t1_path=None, debug=Fa
         test_pc = pc_io.to2dArray(test_pc)
         ircp.fast_ircp(reference=test_pc.T, data=test_pc.T, 
             maxIter=1, critFun=2, getWeights=False, est_b=0.5)
-        # display registration speed with progress bar
-        iterator = tqdm(pc_list)
-    else:
-        iterator = pc_list # no progress bar
+    iterator = tqdm(pc_list) # always use progress bar
 
     
     
