@@ -212,6 +212,11 @@ def register_pc_to_mri(nifti_data_raw, reference_pc, debug=True):
         )
 
     #mt_to_ras = pre_reg_to_mri @ pre_registration_transformation
+        
+    ## sanity check
+    euler = transformation_tools.matToEuler(transformations[chosen][None], degrees=True)[0]
+    if euler[0] < -100 or euler[1] < 100 or euler[2] < -50 or euler[3] > 0:
+        print('WARNING: registration to MRI seems to be off, please check the alignment!')
 
     return transformations[chosen]
 
