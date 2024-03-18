@@ -174,11 +174,12 @@ def register_series(input_directory, pc_list, param_dict, t1_path=None, debug=Fa
     if p.FP_WEIGHT > 0 and t1_path is not None:
         USING_FIXPOINT = True
 
-        fixpoint_savepath = os.path.join(p.OUTDIR, 'matrices', 'fixpoint_reference.txt')
-        mt_ras_savepath = os.path.join(p.OUTDIR, 'matrices', 'mt_to_ras.npy')
+        fixpoint_savepath = os.path.join(p.OUTDIR, 'fixpoint_reference.txt')
+        mt_ras_savepath = os.path.join(p.OUTDIR, 'mt_to_ras.npy')
         if os.path.isfile(fixpoint_savepath) and os.path.isfile(mt_ras_savepath):
             fixpoint_reference = np.loadtxt(fixpoint_savepath)
         else:
+
             fixpoint_reference, pc_to_ras_mri_mapping = mri_tools.get_stabilizing_point(t1_path, load_reference(input_directory, ref_type='EYE', output_space='MT')[0], debug=debug)
             np.savetxt(fixpoint_savepath, fixpoint_reference)
             np.save(mt_ras_savepath, pc_to_ras_mri_mapping)

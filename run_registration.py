@@ -120,7 +120,7 @@ def main(input_folder, output_folder, deviation=False, t1w_image=None, acquisiti
 
         # main registration loop
         if not os.path.isfile(registration_output_file):
-            sequential_registration.register_series(input_folder, pc_list, t1_path=t1w_image, param_dict=param_dict_registration, debug=True)
+            sequential_registration.register_series(input_folder, pc_list, t1_path=t1w_image, param_dict=param_dict_registration, debug=False)
         else:
             print('registration matrices already exist, skipping registration')
 
@@ -208,12 +208,14 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if not os.path.isdir(args.output_folder):
+    if not os.path.isdir(args.output_folder) or not os.path.isdir(os.path.join(args.output_folder, 'matrices')):
         try:
             os.mkdir(args.output_folder)
+            os.mkdir(os.path.join(args.output_folder, 'matrices'))
         except:
             print(f'could not create output folder {args.output_folder}')
             exit(1)
+
 
     assert(os.path.isdir(args.input_folder)), f'input folder {args.input_folder} does not exist'
     assert(os.path.isdir(args.output_folder)), f'output folder {args.output_folder} does not exist, please create it first'
