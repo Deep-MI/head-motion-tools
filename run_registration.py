@@ -74,7 +74,7 @@ def make_motion_plot_split(motion_data, input_folder, output_file, acquisition_s
     plt.savefig(output_file)
 
 
-def main(input_folder, output_folder, deviation=False, t1w_image=None, acquisition_times_csv=None, sequence_length_json=None, tracsuite_registration=False, param_dict_registration=None, param_dict_postprocessing=None):
+def main(input_folder, output_folder, deviation=False, t1w_image=None, acquisition_times_csv=None, sequence_length_json=None, tracsuite_registration=False, param_dict_registration=None, param_dict_postprocessing=None, debug=False):
 
     if param_dict_registration is None:
             param_dict_registration = {
@@ -119,7 +119,7 @@ def main(input_folder, output_folder, deviation=False, t1w_image=None, acquisiti
 
         # main registration loop
         if not os.path.isfile(registration_output_file):
-            sequential_registration.register_series(input_folder, pc_list, t1_path=t1w_image, param_dict=param_dict_registration, debug=True)
+            sequential_registration.register_series(input_folder, pc_list, t1_path=t1w_image, param_dict=param_dict_registration, debug=debug)
         else:
             print('registration matrices already exist, skipping registration')
 
@@ -204,6 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--sequence_length_json', type=str, help='Json file with lengths of MRI sequences', default=None)
     parser.add_argument('--tracsuite_registration', help='Use TracSuite registrations', action='store_true', default=False)
     parser.add_argument('--deviation', help='Use deviation from starting position instead of motion', action='store_true', default=False)
+    parser.add_argument('--debug', help='Show debug visualizations', action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -235,4 +236,5 @@ if __name__ == '__main__':
          acquisition_times_csv=args.acquisition_times_csv, 
          sequence_length_json=args.sequence_length_json, 
          tracsuite_registration=args.tracsuite_registration,
-         deviation=args.deviation)
+         deviation=args.deviation,
+         debug=args.debug)
