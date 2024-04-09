@@ -202,13 +202,14 @@ def split_sequences(motion_data, acq_times, sequence_lengths, start_zero=True, c
         seq_start_times = pd.DataFrame(index=motion_data.columns)
         for seq in sequences:
             seq_start_times[seq] = None
-
         
-
+        acq_times['nifti_filename'] = acq_times['nifti_filename'].str.replace('.nii.gz', '')
+        #acq_times['nifti_filename'] = acq_times['nifti_filename'].values.astype(str)
+        acq_times = acq_times.set_index('nifti_filename')
     else:
         motion_averages = {}
         seq_start_times = {}
-        acq_times = acq_times.set_index(['subjectid', 'nifti_filename'])
+        acq_times = acq_times.set_index('nifti_filename')
 
 
     # these are the resampled timestamps for the motion, since the first point cloud was acquired
@@ -217,39 +218,34 @@ def split_sequences(motion_data, acq_times, sequence_lengths, start_zero=True, c
     for seq_name in sequences:
         seq_key = seq_name
 
-        if seq_name + '.nii.gz' not in acq_times.T.columns:
-            if seq_name == 'T2' and 'T2_caipi.nii.gz' in acq_times.T.columns: # handle edge case of two different T2 protocols
+        if seq_name not in acq_times.index:
+            if seq_name == 'T2' and 'T2_caipi' in acq_times.T.columns: # handle edge case of two different T2 protocols
                 seq_key = 'T2_caipi'
             else:
                 continue
         if start_zero:
             seq_start = 0
         else:
-            seq_start = (acq_times.T[seq_key + ('.nii.gz' if not pilot_mode else '')]['acq_time_seconds']) #*1e9
+            seq_start = (acq_times.T[seq_key]['acq_time_seconds']) #*1e9
 
         
-        start_idx = transformation_smoothing.find_nearest(pc_times,seq_start + crop) #* 1e9)            # add 10 sec to start time
-        end_idx =   transformation_smoothing.find_nearest(pc_times,seq_start + (sequence_lengths[seq_name] - crop))# * 1e9)
+        start_idx = transformation_smoothing.find_nearest_sorted(pc_times,seq_start + crop) #* 1e9)            # add 10 sec to start time
+        end_idx =   transformation_smoothing.find_nearest_sorted(pc_times,seq_start + (sequence_lengths[seq_name] - crop))# * 1e9)
         end_idx   = start_idx + ((sequence_lengths[seq_name] - crop*2) / 0.125)  # remove 10 sec from end time to remove early breaks and smoothing effects
         tmp = motion_data[int(start_idx):int(end_idx)]
         if start_zero:
-            split_sequences.loc[seq_name,:len(tmp)] = tmp.values
+            seq_idx = np.where(split_sequences.index.values.astype(str) == seq_name)[0]
+            assert(len(seq_idx) == 1)
+            split_sequences.iloc[seq_idx.squeeze(), :len(tmp)] = tmp.values.squeeze()
         else:
             split_sequences.loc[(seq_name,'data'),:len(tmp)-1] = tmp.values
             split_sequences.loc[(seq_name,'timestamps'),:len(tmp)-1] = motion_data.index[int(start_idx):int(end_idx)]
 
         if AVERAGE:
-            if not pilot_mode:
-                motion_averages.loc[seq_name] = tmp.mean()
-            else:
-                motion_averages[seq_name] = tmp.mean()
+            motion_averages[seq_name] = tmp.mean()
 
-        final_start_time = (acq_times.T[seq_key + ('.nii.gz' if not pilot_mode else '')]['acq_time_seconds'] - (0 if pilot_mode else acq_times.T['B0_Phase.nii.gz']['acq_time_seconds']))
-
-        if not pilot_mode:
-            seq_start_times.loc[seq_name] = final_start_time
-        else:
-            seq_start_times[seq_name] = final_start_time
+        final_start_time = (acq_times.T[seq_key]['acq_time_seconds'] - (0 if pilot_mode else acq_times.T['B0_Phase']['acq_time_seconds']))
+        seq_start_times[seq_name] = final_start_time
 
     split_sequences = split_sequences.dropna(axis=1, how='all')
 
