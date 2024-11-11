@@ -224,7 +224,15 @@ def register_series(input_directory, pc_list, param_dict, t1_path=None, debug=Fa
     for pc_path in iterator:  # registration loop
 
         # load pointcloud
-        pc = pc_io.loadPcd(pc_path)
+        try:
+            pc = pc_io.loadPcd(pc_path)
+        except Exception as e:
+            print('could not load', pc_path)
+            transform_list.append(fallback_mat)
+            if p.SAVE_WEIGHTS:
+                weight_list.append(empty_mat)
+                output_data_list.append(empty_mat)
+            continue
         pc, pc_structure = pc_io.to2dArray(pc,getColors=False, mask=None, structured_pc_coordinates=True)
 
 

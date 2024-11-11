@@ -165,7 +165,7 @@ def loadPcd(filename, verbose=False):
         else:
             raise NotImplementedError(DATA + " not supported")
 
-        assert(len(data)==POINTS)
+        assert(len(data)==POINTS), 'Header does not match data, PointCloud may be corrupt'
         if verbose:
             print('read .pcd successfully')
 
